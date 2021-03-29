@@ -90,7 +90,7 @@ pycodestyle==2.5.0
 pycountry==18.12.8
 pycparser==2.18
 pyfolio==0.7.0
-Pygments==2.2.0
+Pygments==2.7.4
 pylint==1.9.2
 pymc3==3.4.1
 pymongo==3.6.1
