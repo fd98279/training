@@ -1,0 +1,136 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo
+    env_file: .env
+    ports:
+      - 27018:27017
+    volumes:
+      - ./docker_volume/mongo_data:/data/db
+      - ./docker_volume/mongo_dump:/var/mongo_dump
+      - ./init-mongo.sh:/docker-entrypoint-initdb.d/init-mongo.sh
+
+#   mongo-express:
+#       image: mongo-express
+#       env_file: .env
+#       environment:
+#           - ME_CONFIG_MONGODB_SERVER=mongo
+#           - ME_CONFIG_MONGODB_PORT=27017
+#           - ME_CONFIG_MONGODB_ENABLE_ADMIN=true
+#           - ME_CONFIG_MONGODB_AUTH_DATABASE=admin
+#       depends_on:
+#           - mongo
+#       restart: always
+#       ports:
+#         - 8081:8081
+#       networks:
+#         - training
+#       labels:
+#         - traefik.enable=false
+
+  training-py:
+    image: public.ecr.aws/b8h3z2a1/sravz/training:${SRAVZ_TRAINING_VERSION}
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=local
+      - NSQ_HOST=nsqd
+      - NSQ_LOOKUPD_HOST=nsqlookupd
+      - MONGOLAB_URI=mongodb://sravz:sravz@mongo:27017/sravz
+      - MONGOLAB_SRAVZ_HISTORICAL_URI=mongodb://sravz_historical:sravz_historical@mongo:27017/sravz_historical
+    command: tail -F anything
+    volumes:
+      - ~/.aws:/home/ubuntu/.aws:ro
+      - ./:/home/ubuntu/workspace
+    restart: always
+    # depends_on:
+    #   - nsqlookupd
+    #   - nsqadmin
+    #   - nsqd
+    #   - mongo
+
+  training-go:
+    image: sravzpublic/backend-go:v62
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=local
+      - NSQ_HOST=nsqd
+      - NSQ_LOOKUPD_HOST=nsqlookupd
+      - MONGOLAB_URI=mongodb://sravz:sravz@mongo:27017/sravz
+      - MONGOLAB_SRAVZ_HISTORICAL_URI=mongodb://sravz_historical:sravz_historical@mongo:27017/sravz_historical
+    command: tail -F anything
+    volumes:
+      - ~/.aws:/home/ubuntu/.aws:ro
+      - ./:/workspace
+    restart: always
+
+  training-cpp:
+    image: sravzpublic/backend-cpp:v15
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=vagrant
+      - NSQ_HOST=nsqd-1:4150
+      - NSQ_LOOKUPD_HOST=nsqlookupd-1:4161
+      - MONGOLAB_URI=mongodb://sravz:sravz@mongo:27017/sravz
+      - MONGOLAB_SRAVZ_HISTORICAL_URI=mongodb://sravz_historical:sravz_historical@mongo:27017/sravz_historical
+    volumes:
+      - ~/.aws:/home/airflow/.aws:ro
+      - ./:/workspace
+    restart: always
+
+  training-rust:
+    image: rust:buster
+    working_dir: "/workspace"
+    env_file:
+      - .env
+    tty: true
+    environment:
+      - NODE_ENV=vagrant
+      - NSQ_HOST=nsqd-1:4150
+      - NSQ_LOOKUPD_HOST=nsqlookupd-1:4161
+      - MONGOLAB_URI=mongodb://sravz:sravz@mongo:27017/sravz
+      - MONGOLAB_SRAVZ_HISTORICAL_URI=mongodb://sravz_historical:sravz_historical@mongo:27017/sravz_historical
+    volumes:
+      - ./:/workspace
+    restart: always
+
+  nsqlookupd-1:
+    image: nsqio/nsq
+    ports:
+      - 4160:4160
+      - 4161:4161
+    command: /nsqlookupd
+
+  nsqd-1:
+    image: nsqio/nsq
+    command: >
+      /nsqd
+      -broadcast-address nsqd-1
+      -lookupd-tcp-address=nsqlookupd-1:4160
+    ports:
+      - 4150:4150
+      - 4151:4151
+    depends_on:
+      - nsqlookupd-1
+
+  nsqadmin:
+    image: nsqio/nsq
+    ports:
+      - 4171:4171
+    command: >
+      /nsqadmin
+      -lookupd-http-address=nsqlookupd-1:4161
+    depends_on:
+      - nsqd-1
+      - nsqlookupd-1
+
+  redis:
+    image: redislabs/redismod
+    ports:
+      - '6389:6379'
+    entrypoint: redis-server /usr/local/etc/redis/redis.conf --loadmodule /usr/lib/redis/modules/redisgears.so Plugin /var/opt/redislabs/modules/rg/plugin/gears_python.so
+    volumes:
+      - ./docker_volume/redis_data/redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./docker_volume/redis_data/redis:/data
